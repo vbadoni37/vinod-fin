@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vinod Finance & Car Logbook</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Firebase App & Firestore SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+</head>
+<body class="bg-slate-100 font-sans text-slate-800 antialiased">
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="fixed inset-0 bg-slate-900 bg-opacity-60 flex items-center justify-center z-50">
+        <div class="bg-white p-6 rounded-2xl shadow-2xl text-center">
+            <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mx-auto mb-3"></div>
+            <p class="text-base font-semibold text-slate-700">Syncing with Cloud...</p>
+        </div>
+    </div>
+
+    <div class="max-w-4xl mx-auto px-3 sm:px-6 py-6">
+        <!-- Header -->
+        <header class="mb-6 text-center">
+            <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">Vinod's Finance & Car Hub</h1>
+            <p class="text-xs sm:text-sm text-slate-500 mt-1">Real-time Cloud Sync & Logbook</p>
+        </header>
+
+        <!-- Navigation Tabs (Mobile Optimized Grid) -->
+        <nav class="grid grid-cols-4 gap-1 sm:gap-2 mb-6 bg-white p-1.5 rounded-2xl shadow-sm border border-slate-200">
+            <button onclick="switchTab('dashboard')" id="btn-dashboard" class="tab-btn py-2.5 px-1 sm:px-4 text-xs sm:text-sm font-bold rounded-xl bg-blue-600 text-white transition-all text-center">Dashboard</button>
+            <button onclick="switchTab('expenses')" id="btn-expenses" class="tab-btn py-2.5 px-1 sm:px-4 text-xs sm:text-sm font-semibold rounded-xl text-slate-600 hover:bg-slate-100 transition-all text-center">Expenses</button>
+            <button onclick="switchTab('accounts')" id="btn-accounts" class="tab-btn py-2.5 px-1 sm:px-4 text-xs sm:text-sm font-semibold rounded-xl text-slate-600 hover:bg-slate-100 transition-all text-center">Accounts</button>
+            <button onclick="switchTab('car')" id="btn-car" class="tab-btn py-2.5 px-1 sm:px-4 text-xs sm:text-sm font-semibold rounded-xl text-slate-600 hover:bg-slate-100 transition-all text-center">Car Log</button>
+        </nav>
+
+        <!-- 1. DASHBOARD -->
+        <section id="tab-dashboard" class="tab-content space-y-4">
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div class="bg-gradient-to-br from-blue-500 to-blue-600 text-white p-4 rounded-2xl shadow-md">
+                    <p class="text-xs font-medium text-blue-100 uppercase tracking-wider">Total Bank Balance</p>
+                    <p id="dash-total-bank" class="text-xl sm:text-2xl font-black mt-1">₹ 0.00</p>
+                </div>
+                <div class="bg-gradient-to-br from-amber-500 to-orange-600 text-white p-4 rounded-2xl shadow-md">
+                    <p class="text-xs font-medium text-orange-100 uppercase tracking-wider">Total CC Payables</p>
+                    <p id="dash-total-cc" class="text-xl sm:text-2xl font-black mt-1">₹ 0.00</p>
+                </div>
+                <div class="bg-gradient-to-br from-rose-500 to-red-600 text-white p-4 rounded-2xl shadow-md">
+                    <p class="text-xs font-medium text-red-100 uppercase tracking-wider">Loans Outstanding</p>
+                    <p id="dash-total-loans" class="text-xl sm:text-2xl font-black mt-1">₹ 0.00</p>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
+                    <p class="text-xs font-medium text-slate-400 uppercase tracking-wider">Net Liquid Position</p>
+                    <p id="dash-net-liquid" class="text-xl font-bold text-emerald-600 mt-1">₹ 0.00</p>
+                </div>
+                <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
+                    <p class="text-xs font-medium text-slate-400 uppercase tracking-wider">Total Expenses</p>
+                    <p id="dash-total-exp" class="text-xl font-bold text-indigo-600 mt-1">₹ 0.00</p>
+                </div>
+                <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
+                    <p class="text-xs font-medium text-slate-400 uppercase tracking-wider">Official Car Claims</p>
+                    <p id="dash-total-claim" class="text-xl font-bold text-teal-600 mt-1">₹ 0.00</p>
+                </div>
+            </div>
+
+            <div class="bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-200">
+                <h3 class="font-bold text-slate-700 text-base mb-3">Portfolio Overview</h3>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full text-sm" id="dash-account-table">
+                        <thead>
+                            <tr class="text-slate-400 border-b border-slate-100 text-left">
+                                <th class="pb-2 font-semibold">Name</th>
+                                <th class="pb-2 font-semibold">Category</th>
+                                <th class="pb-2 font-semibold text-right">Balance / Due</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-50"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- 2. DAILY EXPENSES -->
+        <section id="tab-expenses" class="tab-content hidden space-y-4">
+            <div class="bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-200">
+                <h2 class="text-lg font-bold text-slate-800 mb-4">Record Daily Expense</h2>
+                <form id="expense-form" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Date</label>
+                        <input type="date" id="exp-date" class="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-sm focus:outline-blue-500" required>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Category</label>
+                        <select id="exp-category" class="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-sm focus:outline-blue-500">
+                            <option>Food</option><option>Groceries</option><option>Fuel</option><option>Utilities</option><option>Shopping</option><option>Other</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Amount (₹)</label>
+                        <input type="number" step="0.01" id="exp-amount" class="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-sm focus:outline-blue-500" required>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Paid From (Bank / CC)</label>
+                        <select id="exp-account" class="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-sm focus:outline-blue-500"></select>
+                    </div>
+                    <div class="sm:col-span-2">
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Remarks</label>
+                        <input type="text" id="exp-remarks" class="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-sm focus:outline-blue-500" placeholder="Optional notes...">
+                    </div>
+                    <div class="sm:col-span-2 pt-2">
+                        <button type="submit" class="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-6 rounded-xl text-sm shadow-lg shadow-blue-500/20 transition-all">Save Expense</button>
+                    </div>
+                </form>
+            </div>
+
+            <div class="bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-200">
+                <h3 class="font-bold text-slate-700 text-base mb-3">Expense History</h3>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full text-sm" id="expense-table">
+                        <thead>
+                            <tr class="text-slate-400 border-b border-slate-100 text-left">
+                                <th class="pb-2 font-semibold">Date</th>
+                                <th class="pb-2 font-semibold">Category</th>
+                                <th class="pb-2 font-semibold">Amount</th>
+                                <th class="pb-2 font-semibold">Account</th>
+                                <th class="pb-2 font-semibold">Remarks</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-50"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- 3. ACCOUNTS & LOANS -->
+        <section id="tab-accounts" class="tab-content hidden space-y-4">
+            <div class="bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-200">
+                <h2 class="text-lg font-bold text-slate-800 mb-4">Manage Accounts & Loans</h2>
+                <form id="account-form" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <input type="hidden" id="edit-acc-id" value="">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Name</label>
+                        <input type="text" id="acc-name" class="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-sm focus:outline-blue-500" placeholder="e.g., HDFC Bank, Car Loan" required>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Type</label>
+                        <select id="acc-type" class="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-sm focus:outline-blue-500">
+                            <option value="Bank">Bank Account (Asset)</option>
+                            <option value="Credit Card">Credit Card (Payable)</option>
+                            <option value="Loan">Loan (Liability)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Balance / Due (₹)</label>
+                        <input type="number" step="0.01" id="acc-balance" class="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-sm focus:outline-blue-500" value="0" required>
+                    </div>
+                    <div class="flex items-end gap-2 pt-2">
+                        <button type="submit" id="save-acc-btn" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 rounded-xl text-sm shadow-lg shadow-blue-500/20 transition-all">Add Account</button>
+                        <button type="button" id="cancel-edit-acc" onclick="resetAccountForm()" class="hidden bg-slate-300 hover:bg-slate-400 text-slate-700 font-bold py-2.5 px-4 rounded-xl text-sm transition-all">Cancel</button>
+                    </div>
+                </form>
+            </div>
+
+            <div class="bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-200">
+                <h3 class="font-bold text-slate-700 text-base mb-3">Saved Items</h3>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full text-sm" id="account-table">
+                        <thead>
+                            <tr class="text-slate-400 border-b border-slate-100 text-left">
+                                <th class="pb-2 font-semibold">Name</th>
+                                <th class="pb-2 font-semibold">Type</th>
+                                <th class="pb-2 font-semibold">Balance / Due</th>
+                                <th class="pb-2 font-semibold text-center">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-50"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- 4. CAR LOGBOOK -->
+        <section id="tab-car" class="tab-content hidden space-y-4">
+            <div class="bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-200">
+                <h2 id="car-form-title" class="text-lg font-bold text-slate-800 mb-4">Car Logbook & Reimbursement</h2>
+                <form id="car-form" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <input type="hidden" id="edit-car-id" value="">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Date</label>
+                        <input type="date" id="car-date" class="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-sm focus:outline-blue-500" required>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Trip Type</label>
+                        <select id="car-type" class="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-sm focus:outline-blue-500">
+                            <option value="Official">Official (KM × 11)</option>
+                            <option value="Personal">Personal (₹ 0)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">From Station</label>
+                        <input type="text" id="car-from" class="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-sm focus:outline-blue-500" required>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">To Station</label>
+                        <input type="text" id="car-to" class="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-sm focus:outline-blue-500" required>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Opening Reading (KM)</label>
+                        <input type="number" step="1" id="car-op" class="w-full bg-slate-100 border border-slate-200 p-2.5 rounded-xl text-sm font-bold text-slate-700" required>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Closing Reading (KM)</label>
+                        <input type="number" step="1" id="car-cl" class="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-sm focus:outline-blue-500" required>
+                    </div>
+                    <div class="sm:col-span-2">
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Remarks</label>
+                        <input type="text" id="car-remarks" class="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-sm focus:outline-blue-500" placeholder="Optional notes...">
+                    </div>
+                    <div class="sm:col-span-2 flex items-center gap-2 pt-2">
+                        <button type="submit" id="save-car-btn" class="flex-1 sm:flex-none bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-6 rounded-xl text-sm shadow-lg shadow-blue-500/20 transition-all">Save Trip</button>
+                        <button type="button" id="cancel-edit-car" onclick="resetCarForm()" class="hidden bg-slate-300 hover:bg-slate-400 text-slate-700 font-bold py-2.5 px-6 rounded-xl text-sm transition-all">Cancel</button>
+                    </div>
+                </form>
+            </div>
+
+            <div class="bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-200">
+                <h3 class="font-bold text-slate-700 text-base mb-3">Trip History & Odometer Chain</h3>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full text-sm" id="car-table">
+                        <thead>
+                            <tr class="text-slate-400 border-b border-slate-100 text-left">
+                                <th class="pb-2 font-semibold">Date</th>
+                                <th class="pb-2 font-semibold">Route</th>
+                                <th class="pb-2 font-semibold">Readings (Op → Cl)</th>
+                                <th class="pb-2 font-semibold">KM Run</th>
+                                <th class="pb-2 font-semibold">Type</th>
+                                <th class="pb-2 font-semibold">Amount</th>
+                                <th class="pb-2 font-semibold text-center">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-50"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Script Logic -->
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyCVKauyr38cyghDgulZLPDyVvaMlnLfkSI",
+            authDomain: "vin-finance.firebaseapp.com",
+            projectId: "vin-finance",
+            storageBucket: "vin-finance.firebasestorage.app",
+            messagingSenderId: "398100782394",
+            appId: "1:398100782394:web:75083c001f0f7658008403",
+            measurementId: "G-F560PMW102"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        let appData = { accounts: [], expenses: [], carLogs: [] };
+
+        function fetchAllData() {
+            db.collection("financeData").doc("mainStore").get().then((doc) => {
+                if (doc.exists) {
+                    appData = doc.data();
+                } else {
+                    appData = {
+                        accounts: [
+                            { id: "acc_1", name: "HDFC Bank", type: "Bank", balance: 50000 },
+                            { id: "acc_2", name: "ICICI CC", type: "Credit Card", balance: 5000 },
+                            { id: "acc_3", name: "Car Loan", type: "Loan", balance: 300000 }
+                        ],
+                        expenses: [],
+                        carLogs: []
+                    };
+                    saveToCloud();
+                }
+                renderAll();
+                document.getElementById('loading-overlay').style.display = 'none';
+            }).catch((err) => {
+                console.error(err);
+                document.getElementById('loading-overlay').style.display = 'none';
+                alert("Cloud connection error.");
+            });
+        }
+
+        function saveToCloud() {
+            db.collection("financeData").doc("mainStore").set(appData).then(() => renderAll());
+        }
+
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+            document.querySelectorAll('.tab-btn').forEach(el => {
+                el.classList.remove('bg-blue-600', 'text-white', 'font-bold');
+                el.classList.add('text-slate-600', 'font-semibold');
+            });
+            document.getElementById('tab-' + tabId).classList.remove('hidden');
+            const activeBtn = document.getElementById('btn-' + tabId);
+            activeBtn.classList.remove('text-slate-600', 'font-semibold');
+            activeBtn.classList.add('bg-blue-600', 'text-white', 'font-bold');
+
+            if (tabId === 'car' && !document.getElementById('edit-car-id').value) {
+                updateAutoOpeningReading();
+            }
+        }
+
+        function updateAutoOpeningReading() {
+            const opInput = document.getElementById('car-op');
+            if (appData.carLogs.length > 0) {
+                const lastTrip = appData.carLogs[appData.carLogs.length - 1];
+                opInput.value = lastTrip.closing;
+            } else {
+                opInput.value = 0;
+            }
+        }
+
+        // --- Recalculate Odometer Chain for Edits ---
+        function recalculateOdometerChain() {
+            let currentOp = 0;
+            appData.carLogs.forEach((trip, index) => {
+                if (index === 0) {
+                    // Keep first trip opening reading as is or default
+                } else {
+                    trip.opening = appData.carLogs[index - 1].closing;
+                }
+                if (trip.closing < trip.opening) {
+                    trip.closing = trip.opening; // safety fallback
+                }
+                trip.kmRun = trip.closing - trip.opening;
+                trip.amount = trip.type === 'Personal' ? 0 : trip.kmRun * 11;
+            });
+        }
+
+        // Account Form
+        document.getElementById('account-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const id = document.getElementById('edit-acc-id').value;
+            const name = document.getElementById('acc-name').value;
+            const type = document.getElementById('acc-type').value;
+            const balance = parseFloat(document.getElementById('acc-balance').value);
+
+            if (!id) {
+                appData.accounts.push({ id: 'acc_' + Date.now(), name, type, balance });
+            } else {
+                let acc = appData.accounts.find(a => a.id === id);
+                if (acc) { acc.name = name; acc.type = type; acc.balance = balance; }
+                resetAccountForm();
+            }
+            this.reset();
+            saveToCloud();
+        });
+
+        function editAccount(id) {
+            const acc = appData.accounts.find(a => a.id === id);
+            if (!acc) return;
+            document.getElementById('acc-name').value = acc.name;
+            document.getElementById('acc-type').value = acc.type;
+            document.getElementById('acc-balance').value = acc.balance;
+            document.getElementById('edit-acc-id').value = acc.id;
+            document.getElementById('save-acc-btn').innerText = "Update Account";
+            document.getElementById('cancel-edit-acc').classList.remove('hidden');
+            switchTab('accounts');
+        }
+
+        function resetAccountForm() {
+            document.getElementById('account-form').reset();
+            document.getElementById('edit-acc-id').value = "";
+            document.getElementById('save-acc-btn').innerText = "Add Account";
+            document.getElementById('cancel-edit-acc').classList.add('hidden');
+        }
+
+        function deleteAccount(id) {
+            if (confirm("Delete this item?")) {
+                appData.accounts = appData.accounts.filter(a => a.id !== id);
+                saveToCloud();
+            }
+        }
+
+        // Expense Form
+        document.getElementById('expense-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const amount = parseFloat(document.getElementById('exp-amount').value);
+            const paidFrom = document.getElementById('exp-account').value;
+
+            appData.expenses.push({
+                id: 'exp_' + Date.now(),
+                date: document.getElementById('exp-date').value,
+                category: document.getElementById('exp-category').value,
+                amount,
+                paidFrom,
+                remarks: document.getElementById('exp-remarks').value
+            });
+
+            let acc = appData.accounts.find(a => a.name === paidFrom);
+            if (acc) {
+                if (acc.type === 'Bank') acc.balance -= amount;
+                else if (acc.type === 'Credit Card') acc.balance += amount;
+            }
+            this.reset();
+            document.getElementById('exp-date').valueAsDate = new Date();
+            saveToCloud();
+        });
+
+        // Car Form
+        document.getElementById('car-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const editId = document.getElementById('edit-car-id').value;
+            const op = parseFloat(document.getElementById('car-op').value);
+            const cl = parseFloat(document.getElementById('car-cl').value);
+
+            if (cl <= op) {
+                alert("Closing reading must exceed opening reading!");
+                return;
+            }
+
+            const kmRun = cl - op;
+            const type = document.getElementById('car-type').value;
+            const amount = type === 'Personal' ? 0 : kmRun * 11;
+            const date = document.getElementById('car-date').value;
+            const route = document.getElementById('car-from').value + " → " + document.getElementById('car-to').value;
+            const remarks = document.getElementById('car-remarks').value;
+
+            if (!editId) {
+                appData.carLogs.push({
+                    id: 'car_' + Date.now(),
+                    date, route, opening: op, closing: cl, kmRun, type, amount, remarks
+                });
+            } else {
+                let trip = appData.carLogs.find(c => c.id === editId);
+                if (trip) {
+                    trip.date = date;
+                    trip.route = route;
+                    trip.opening = op;
+                    trip.closing = cl;
+                    trip.type = type;
+                    trip.remarks = remarks;
+                    recalculateOdometerChain();
+                }
+                resetCarForm();
+            }
+
+            this.reset();
+            document.getElementById('car-date').valueAsDate = new Date();
+            saveToCloud();
+            if (!editId) updateAutoOpeningReading();
+        });
+
+        function editCarTrip(id) {
+            const trip = appData.carLogs.find(c => c.id === id);
+            if (!trip) return;
+            document.getElementById('edit-car-id').value = trip.id;
+            document.getElementById('car-date').value = trip.date;
+            const stations = trip.route.split(" → ");
+            document.getElementById('car-from').value = stations[0] || '';
+            document.getElementById('car-to').value = stations[1] || '';
+            document.getElementById('car-op').value = trip.opening;
+            document.getElementById('car-cl').value = trip.closing;
+            document.getElementById('car-type').value = trip.type;
+            document.getElementById('car-remarks').value = trip.remarks || '';
+            document.getElementById('car-form-title').innerText = "Edit Car Trip & Cascade Readings";
+            document.getElementById('save-car-btn').innerText = "Update Trip";
+            document.getElementById('cancel-edit-car').classList.remove('hidden');
+            switchTab('car');
+        }
+
+        function resetCarForm() {
+            document.getElementById('car-form').reset();
+            document.getElementById('edit-car-id').value = "";
+            document.getElementById('car-form-title').innerText = "Car Logbook & Reimbursement";
+            document.getElementById('save-car-btn').innerText = "Save Trip";
+            document.getElementById('cancel-edit-car').classList.add('hidden');
+            document.getElementById('car-date').valueAsDate = new Date();
+            updateAutoOpeningReading();
+        }
+
+        function deleteCarTrip(id) {
+            if (confirm("Delete this trip? Subsequent odometer readings will realign.")) {
+                appData.carLogs = appData.carLogs.filter(c => c.id !== id);
+                recalculateOdometerChain();
+                saveToCloud();
+            }
+        }
+
+        // Render Everything
+        function renderAll() {
+            let accSelect = document.getElementById('exp-account');
+            accSelect.innerHTML = '';
+            let accTable = document.querySelector('#account-table tbody');
+            let dashAcc = document.querySelector('#dash-account-table tbody');
+            accTable.innerHTML = '';
+            dashAcc.innerHTML = '';
+
+            let totalBank = 0, totalCC = 0, totalLoans = 0;
+
+            appData.accounts.forEach(acc => {
+                if (acc.type === 'Bank' || acc.type === 'Credit Card') {
+                    accSelect.innerHTML += `<option value="${acc.name}">${acc.name} (${acc.type})</option>`;
+                }
+
+                let badge = '', status = `₹ ${acc.balance.toFixed(2)}`;
+                if (acc.type === 'Bank') {
+                    badge = '<span class="bg-blue-50 text-blue-600 px-2 py-0.5 rounded-md font-semibold text-xs">Bank</span>';
+                    status += ' (Asset)';
+                    totalBank += acc.balance;
+                } else if (acc.type === 'Credit Card') {
+                    badge = '<span class="bg-amber-50 text-amber-600 px-2 py-0.5 rounded-md font-semibold text-xs">Credit Card</span>';
+                    status += ' (Due)';
+                    totalCC += acc.balance;
+                } else {
+                    badge = '<span class="bg-rose-50 text-rose-600 px-2 py-0.5 rounded-md font-semibold text-xs">Loan</span>';
+                    status += ' (Liability)';
+                    totalLoans += acc.balance;
+                }
+
+                accTable.innerHTML += `<tr class="border-b border-slate-50">
+                    <td class="py-3 font-medium text-slate-800">${acc.name}</td>
+                    <td class="py-3">${badge}</td>
+                    <td class="py-3 font-semibold text-slate-700">${status}</td>
+                    <td class="py-3 text-center">
+                        <button onclick="editAccount('${acc.id}')" class="text-blue-600 font-semibold hover:underline mr-2">Edit</button>
+                        <button onclick="deleteAccount('${acc.id}')" class="text-rose-500 font-semibold hover:underline">Del</button>
+                    </td>
+                </tr>`;
+
+                dashAcc.innerHTML += `<tr class="border-b border-slate-50">
+                    <td class="py-2.5 font-medium text-slate-800">${acc.name}</td>
+                    <td class="py-2.5">${badge}</td>
+                    <td class="py-2.5 font-semibold text-right text-slate-700">${status}</td>
+                </tr>`;
+            });
+
+            document.getElementById('dash-total-bank').innerText = `₹ ${totalBank.toFixed(2)}`;
+            document.getElementById('dash-total-cc').innerText = `₹ ${totalCC.toFixed(2)}`;
+            document.getElementById('dash-total-loans').innerText = `₹ ${totalLoans.toFixed(2)}`;
+
+            let netLiquid = totalBank - totalCC;
+            let netEl = document.getElementById('dash-net-liquid');
+            netEl.innerText = `₹ ${netLiquid.toFixed(2)}`;
+            netEl.className = netLiquid >= 0 ? "text-xl font-bold text-emerald-600 mt-1" : "text-xl font-bold text-rose-600 mt-1";
+
+            // Expenses
+            let expTable = document.querySelector('#expense-table tbody');
+            expTable.innerHTML = '';
+            let totalExp = 0;
+            appData.expenses.forEach(ex => {
+                totalExp += ex.amount;
+                expTable.innerHTML += `<tr class="border-b border-slate-50">
+                    <td class="py-3 text-slate-600">${ex.date}</td>
+                    <td class="py-3 font-medium text-slate-800">${ex.category}</td>
+                    <td class="py-3 font-semibold text-slate-700">₹ ${ex.amount.toFixed(2)}</td>
+                    <td class="py-3 text-slate-600">${ex.paidFrom}</td>
+                    <td class="py-3 text-slate-400 text-xs">${ex.remarks || '-'}</td>
+                </tr>`;
+            });
+            document.getElementById('dash-total-exp').innerText = `₹ ${totalExp.toFixed(2)}`;
+
+            // Car Logs
+            let carTable = document.querySelector('#car-table tbody');
+            carTable.innerHTML = '';
+            let totalClaim = 0;
+            appData.carLogs.forEach(c => {
+                if (c.type === 'Official') totalClaim += c.amount;
+                let typeBadge = c.type === 'Official' ? '<span class="bg-teal-50 text-teal-600 px-2 py-0.5 rounded-md font-semibold text-xs">Official</span>' : '<span class="bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md font-semibold text-xs">Personal</span>';
+                carTable.innerHTML += `<tr class="border-b border-slate-50">
+                    <td class="py-3 text-slate-600">${c.date}</td>
+                    <td class="py-3 font-medium text-slate-800">${c.route}</td>
+                    <td class="py-3 text-slate-500 text-xs">${c.opening} → ${c.closing}</td>
+                    <td class="py-3 font-bold text-slate-700">${c.kmRun} KM</td>
+                    <td class="py-3">${typeBadge}</td>
+                    <td class="py-3 font-semibold text-emerald-600">₹ ${c.amount.toFixed(2)}</td>
+                    <td class="py-3 text-center">
+                        <button onclick="editCarTrip('${c.id}')" class="text-blue-600 font-semibold hover:underline mr-2">Edit</button>
+                        <button onclick="deleteCarTrip('${c.id}')" class="text-rose-500 font-semibold hover:underline">Del</button>
+                    </td>
+                </tr>`;
+            });
+            document.getElementById('dash-total-claim').innerText = `₹ ${totalClaim.toFixed(2)}`;
+        }
+
+        fetchAllData();
+        document.getElementById('car-date').valueAsDate = new Date();
+        document.getElementById('exp-date').valueAsDate = new Date();
+    </script>
+</body>
+</html>
