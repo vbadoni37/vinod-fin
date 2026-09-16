@@ -1,0 +1,845 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vinod's Personal Finance & Car Hub</title>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Firebase App & Firestore SDKs (v10 compat) -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+</head>
+<body class="bg-slate-100 font-sans text-slate-800 antialiased min-h-screen">
+    <style>
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        @media print {
+            body { background: white !important; }
+            nav, header, #loading-overlay, #error-banner, #reports-form-container { display: none !important; }
+            .no-print { display: none !important; }
+            .tab-content { display: none !important; }
+            #tab-reports { display: block !important; }
+        }
+    </style>
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50">
+        <div class="bg-white p-6 rounded-2xl shadow-2xl text-center max-w-xs w-full mx-4">
+            <div class="animate-spin rounded-full h-10 w-10 border-4 border-blue-600 border-t-transparent mx-auto mb-3"></div>
+            <p class="text-base font-semibold text-slate-700">Connecting to Cloud...</p>
+            <p class="text-xs text-slate-400 mt-1">Syncing Firebase Firestore</p>
+        </div>
+    </div>
+
+    <div class="max-w-4xl mx-auto px-3 sm:px-6 py-6">
+        <!-- Header -->
+        <header class="mb-6 text-center relative no-print flex flex-col items-center">
+            <div class="inline-flex items-center gap-2 bg-blue-50 border border-blue-100 px-3.5 py-1.5 rounded-full text-xs font-semibold text-blue-700 mb-2 cursor-pointer" id="sync-status-badge">
+                <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" id="sync-dot"></span>
+                <span id="sync-status-text">Cloud Sync Active</span>
+            </div>
+            <h1 class="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">Vinod's Finance & Car Hub</h1>
+            <p class="text-xs sm:text-sm text-slate-500 mt-1">Real-time Firebase Sync & Personal Expense Tracker</p>
+            
+            <!-- Profile Selector -->
+            <div class="mt-4 flex items-center gap-2">
+                <label class="text-sm font-bold text-slate-700">Profile:</label>
+                <select id="global-member-select" onchange="changeGlobalMember()" class="bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-sm font-bold text-blue-600 focus:outline-blue-500 min-w-[120px]">
+                    <option value="Self">Self</option>
+                </select>
+                <button onclick="addNewFamilyMember()" class="bg-slate-100 hover:bg-slate-200 text-slate-600 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all">+ Add</button>
+            </div>
+        </header>
+
+        <!-- Banner for Error Alerts -->
+        <div id="error-banner" class="hidden mb-6 bg-amber-50 border border-amber-200 p-4 rounded-2xl text-amber-800 text-xs sm:text-sm">
+            <div class="font-bold flex items-center gap-2 text-amber-900">
+                Firebase Notice: <span id="error-banner-title">Permission / Database Error</span>
+            </div>
+            <p id="error-banner-msg" class="mt-1 text-slate-600"></p>
+        </div>
+
+        <!-- Navigation Tabs -->
+        <nav class="flex overflow-x-auto whitespace-nowrap gap-1 sm:gap-2 mb-6 bg-white p-1.5 rounded-2xl shadow-sm border border-slate-200 hide-scrollbar no-print">
+            <button onclick="switchTab('dashboard')" id="btn-dashboard" class="flex-1 min-w-fit tab-btn py-2.5 px-3 sm:px-4 text-xs sm:text-sm font-bold rounded-xl bg-blue-600 text-white transition-all text-center">Dashboard</button>
+            <button onclick="switchTab('expenses')" id="btn-expenses" class="flex-1 min-w-fit tab-btn py-2.5 px-3 sm:px-4 text-xs sm:text-sm font-semibold rounded-xl text-slate-600 hover:bg-slate-100 transition-all text-center">Transactions</button>
+            <button onclick="switchTab('accounts')" id="btn-accounts" class="flex-1 min-w-fit tab-btn py-2.5 px-3 sm:px-4 text-xs sm:text-sm font-semibold rounded-xl text-slate-600 hover:bg-slate-100 transition-all text-center">Accounts</button>
+            <button onclick="switchTab('car')" id="btn-car" class="flex-1 min-w-fit tab-btn py-2.5 px-3 sm:px-4 text-xs sm:text-sm font-semibold rounded-xl text-slate-600 hover:bg-slate-100 transition-all text-center">Car Log</button>
+            <button onclick="switchTab('reports')" id="btn-reports" class="flex-1 min-w-fit tab-btn py-2.5 px-3 sm:px-4 text-xs sm:text-sm font-semibold rounded-xl text-slate-600 hover:bg-slate-100 transition-all text-center">Reports</button>
+        </nav>
+
+        <!-- 1. DASHBOARD TAB -->
+        <section id="tab-dashboard" class="tab-content space-y-4">
+            <div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                <div class="bg-gradient-to-br from-emerald-500 to-teal-600 text-white p-4 rounded-2xl shadow-md">
+                    <p class="text-[10px] sm:text-xs font-medium text-emerald-100 uppercase tracking-wider">Total Income</p>
+                    <p id="dash-total-inc" class="text-lg sm:text-xl font-black mt-1">₹ 0.00</p>
+                </div>
+                <div class="bg-gradient-to-br from-blue-600 to-indigo-700 text-white p-4 rounded-2xl shadow-md">
+                    <p class="text-[10px] sm:text-xs font-medium text-blue-100 uppercase tracking-wider">Bank (Assets)</p>
+                    <p id="dash-total-bank" class="text-lg sm:text-xl font-black mt-1">₹ 0.00</p>
+                </div>
+                <div class="bg-gradient-to-br from-purple-600 to-fuchsia-700 text-white p-4 rounded-2xl shadow-md">
+                    <p class="text-[10px] sm:text-xs font-medium text-purple-100 uppercase tracking-wider">Investments</p>
+                    <p id="dash-total-invest" class="text-lg sm:text-xl font-black mt-1">₹ 0.00</p>
+                </div>
+                <div class="bg-gradient-to-br from-amber-500 to-orange-600 text-white p-4 rounded-2xl shadow-md">
+                    <p class="text-[10px] sm:text-xs font-medium text-orange-100 uppercase tracking-wider">CC Payables</p>
+                    <p id="dash-total-cc" class="text-lg sm:text-xl font-black mt-1">₹ 0.00</p>
+                </div>
+                <div class="bg-gradient-to-br from-rose-500 to-red-600 text-white p-4 rounded-2xl shadow-md">
+                    <p class="text-[10px] sm:text-xs font-medium text-red-100 uppercase tracking-wider">Loans</p>
+                    <p id="dash-total-loans" class="text-lg sm:text-xl font-black mt-1">₹ 0.00</p>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
+                    <p class="text-xs font-medium text-slate-400 uppercase tracking-wider">Net Liquid Position (Bank - CC)</p>
+                    <p id="dash-net-liquid" class="text-xl font-bold text-emerald-600 mt-1">₹ 0.00</p>
+                </div>
+                <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
+                    <p class="text-xs font-medium text-slate-400 uppercase tracking-wider">Total Expenses Logged</p>
+                    <p id="dash-total-exp" class="text-xl font-bold text-indigo-600 mt-1">₹ 0.00</p>
+                </div>
+                <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
+                    <p class="text-xs font-medium text-slate-400 uppercase tracking-wider">Official Car Claims</p>
+                    <p id="dash-total-claim" class="text-xl font-bold text-teal-600 mt-1">₹ 0.00</p>
+                </div>
+            </div>
+
+            <div class="bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-200">
+                <h3 class="font-bold text-slate-700 text-base mb-3">Portfolio Overview</h3>
+                <div class="overflow-x-auto hide-scrollbar">
+                    <table class="min-w-full text-sm whitespace-nowrap" id="dash-account-table">
+                        <thead>
+                            <tr class="text-slate-400 border-b border-slate-100 text-left">
+                                <th class="pb-2 font-semibold">Account / Liability Name</th>
+                                <th class="pb-2 font-semibold">Category</th>
+                                <th class="pb-2 font-semibold text-right">Current Status / Balance</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-50"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- 2. TRANSACTIONS TAB -->
+        <section id="tab-expenses" class="tab-content hidden space-y-4">
+            <div class="bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-200">
+                <h2 id="exp-form-title" class="text-lg font-bold text-slate-800 mb-4">Record Transaction</h2>
+                
+                <div class="mb-4">
+                    <label class="block text-xs font-semibold text-slate-500 mb-1">Transaction Type</label>
+                    <select id="exp-type" onchange="toggleTransType()" class="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-sm font-bold text-blue-600 focus:outline-blue-500">
+                        <option value="Expense">Expense</option>
+                        <option value="Income">Income</option>
+                        <option value="Transfer">Transfer Between Accounts</option>
+                    </select>
+                </div>
+
+                <form id="expense-form" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <input type="hidden" id="edit-exp-id" value="">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Date</label>
+                        <input type="date" id="exp-date" class="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-sm focus:outline-blue-500" required>
+                    </div>
+                    <div id="wrapper-category">
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Category</label>
+                        <select id="exp-category" class="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-sm focus:outline-blue-500">
+                            <option value="Fuel">Fuel</option>
+                            <option value="Food">Food</option>
+                            <option value="Utilities">Utilities</option>
+                            <option value="Shopping">Shopping</option>
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Amount (₹)</label>
+                        <input type="number" step="0.01" id="exp-amount" class="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-sm focus:outline-blue-500" placeholder="0.00" required>
+                    </div>
+                    <div id="wrapper-account-from">
+                        <label id="label-account-from" class="block text-xs font-semibold text-slate-500 mb-1">Paid From (Bank / CC Only)</label>
+                        <select id="exp-account" class="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-sm focus:outline-blue-500"></select>
+                    </div>
+                    <div id="wrapper-member-to" class="hidden">
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Transfer To Member</label>
+                        <select id="exp-member-to" onchange="updateTransferToAccounts()" class="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-sm focus:outline-blue-500"></select>
+                    </div>
+                    <div id="wrapper-account-to" class="hidden">
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Transfer To Account</label>
+                        <select id="exp-account-to" class="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-sm focus:outline-blue-500"></select>
+                    </div>
+                    <div class="sm:col-span-2">
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Remarks</label>
+                        <input type="text" id="exp-remarks" class="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-sm focus:outline-blue-500" placeholder="Optional notes...">
+                    </div>
+                    <div class="sm:col-span-2 flex items-center gap-2 pt-2">
+                        <button type="submit" id="save-exp-btn" class="flex-1 sm:flex-none bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-6 rounded-xl text-sm shadow-lg shadow-blue-500/20 transition-all">Add Transaction</button>
+                        <button type="button" id="cancel-edit-exp" onclick="resetExpenseForm()" class="hidden bg-slate-300 hover:bg-slate-400 text-slate-700 font-bold py-2.5 px-6 rounded-xl text-sm transition-all">Cancel</button>
+                    </div>
+                </form>
+            </div>
+
+            <div class="bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-200">
+                <h3 class="font-bold text-slate-700 text-base mb-3">Transaction History</h3>
+                <div class="overflow-x-auto hide-scrollbar">
+                    <table class="min-w-full text-sm whitespace-nowrap" id="expense-table">
+                        <thead>
+                            <tr class="text-slate-400 border-b border-slate-100 text-left">
+                                <th class="pb-2 font-semibold">Type</th>
+                                <th class="pb-2 font-semibold">Date</th>
+                                <th class="pb-2 font-semibold">Category</th>
+                                <th class="pb-2 font-semibold">Amount</th>
+                                <th class="pb-2 font-semibold">Details / Account</th>
+                                <th class="pb-2 font-semibold">Remarks</th>
+                                <th class="pb-2 font-semibold text-center">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-50"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- 3. ACCOUNTS TAB -->
+        <section id="tab-accounts" class="tab-content hidden space-y-4">
+            <div class="bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-200">
+                <h2 id="acc-form-title" class="text-lg font-bold text-slate-800 mb-4">Manage Accounts & Loans</h2>
+                <form id="account-form" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <input type="hidden" id="edit-acc-id" value="">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Account Name</label>
+                        <input type="text" id="acc-name" class="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-sm focus:outline-blue-500" placeholder="e.g., HDFC Bank, Car Loan" required>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Type</label>
+                        <select id="acc-type" class="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-sm focus:outline-blue-500">
+                            <option value="Bank">Bank Account (Asset)</option>
+                            <option value="Credit Card">Credit Card (Payable Due)</option>
+                            <option value="Loan">Loan (Liability)</option>
+                            <option value="Investment (MF)">Investment (MF)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Opening Balance / Due (₹)</label>
+                        <input type="number" step="0.01" id="acc-balance" class="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-sm focus:outline-blue-500" value="0" required>
+                    </div>
+                    <div class="flex items-end gap-2 pt-2">
+                        <button type="submit" id="save-acc-btn" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 rounded-xl text-sm shadow-lg transition-all">Add Account</button>
+                        <button type="button" id="cancel-edit-acc" onclick="resetAccountForm()" class="hidden bg-slate-300 hover:bg-slate-400 text-slate-700 font-bold py-2.5 px-4 rounded-xl text-sm transition-all">Cancel</button>
+                    </div>
+                </form>
+            </div>
+
+            <div class="bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-200">
+                <h3 class="font-bold text-slate-700 text-base mb-3">Saved Accounts & Liabilities</h3>
+                <div class="overflow-x-auto hide-scrollbar">
+                    <table class="min-w-full text-sm whitespace-nowrap" id="account-table">
+                        <thead>
+                            <tr class="text-slate-400 border-b border-slate-100 text-left">
+                                <th class="pb-2 font-semibold">Name</th>
+                                <th class="pb-2 font-semibold">Type</th>
+                                <th class="pb-2 font-semibold">Balance / Due</th>
+                                <th class="pb-2 font-semibold text-center">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-50"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- 4. CAR LOGBOOK TAB -->
+        <section id="tab-car" class="tab-content hidden space-y-4">
+            <div class="bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-200">
+                <h2 id="car-form-title" class="text-lg font-bold text-slate-800 mb-4">Car Logbook & Reimbursement</h2>
+                <form id="car-form" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <input type="hidden" id="edit-car-id" value="">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Date</label>
+                        <input type="date" id="car-date" class="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-sm focus:outline-blue-500" required>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Trip Type</label>
+                        <select id="car-type" class="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-sm focus:outline-blue-500">
+                            <option value="Official">Official (KM × ₹11)</option>
+                            <option value="Personal">Personal (₹ 0)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Route</label>
+                        <select id="car-route-select" onchange="toggleCarRoute()" class="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-sm focus:outline-blue-500">
+                            <option value="LOCAL PNT">LOCAL PNT</option>
+                            <option value="PNT HOTEL TO OFFICE">PNT HOTEL TO OFFICE</option>
+                            <option value="PNT OFFICE TO HOTEL">PNT OFFICE TO HOTEL</option>
+                            <option value="PNT TO DDN">PNT TO DDN</option>
+                            <option value="DDN TO PNT">DDN TO PNT</option>
+                            <option value="LOCAL DDN">LOCAL DDN</option>
+                            <option value="OTHER">OTHER</option>
+                        </select>
+                    </div>
+                    <div id="wrapper-car-route-custom" class="hidden">
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Custom Route</label>
+                        <input type="text" id="car-route-custom" class="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-sm focus:outline-blue-500" placeholder="e.g. Home to Airport">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Opening Reading (KM)</label>
+                        <input type="number" step="1" id="car-op" class="w-full bg-slate-100 border border-slate-200 p-2.5 rounded-xl text-sm font-bold text-slate-700" required>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Closing Reading (KM)</label>
+                        <input type="number" step="1" id="car-cl" class="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-sm focus:outline-blue-500" required>
+                    </div>
+                    <div class="sm:col-span-2">
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Remarks</label>
+                        <input type="text" id="car-remarks" class="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-sm focus:outline-blue-500" placeholder="Optional notes...">
+                    </div>
+                    <div class="sm:col-span-2 flex items-center gap-2 pt-2">
+                        <button type="submit" id="save-car-btn" class="flex-1 sm:flex-none bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-6 rounded-xl text-sm shadow-lg transition-all">Save Trip</button>
+                        <button type="button" id="cancel-edit-car" onclick="resetCarForm()" class="hidden bg-slate-300 hover:bg-slate-400 text-slate-700 font-bold py-2.5 px-6 rounded-xl text-sm transition-all">Cancel</button>
+                    </div>
+                </form>
+            </div>
+
+            <div class="bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-200">
+                <h3 class="font-bold text-slate-700 text-base mb-3">Trip History</h3>
+                <div class="overflow-x-auto hide-scrollbar">
+                    <table class="min-w-full text-sm whitespace-nowrap" id="car-table">
+                        <thead>
+                            <tr class="text-slate-400 border-b border-slate-100 text-left">
+                                <th class="pb-2 font-semibold">Date</th>
+                                <th class="pb-2 font-semibold">Route</th>
+                                <th class="pb-2 font-semibold">Readings (Op → Cl)</th>
+                                <th class="pb-2 font-semibold">KM Run</th>
+                                <th class="pb-2 font-semibold">Type</th>
+                                <th class="pb-2 font-semibold">Amount</th>
+                                <th class="pb-2 font-semibold text-center">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-50"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- 5. REPORTS TAB -->
+        <section id="tab-reports" class="tab-content hidden space-y-4">
+            <div id="reports-form-container" class="bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-200">
+                <h2 class="text-lg font-bold text-slate-800 mb-4">Generate Monthly Reports</h2>
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Select Month</label>
+                        <input type="month" id="report-month" class="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-sm focus:outline-blue-500" required>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Report Type</label>
+                        <select id="report-type" onchange="toggleReportType()" class="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-sm focus:outline-blue-500">
+                            <option value="Expenses List">Expenses List</option>
+                            <option value="Income List">Income List</option>
+                            <option value="Bank / CC Statement">Bank / CC Statement</option>
+                            <option value="Car Log Book">Car Log Book</option>
+                        </select>
+                    </div>
+                    <div id="wrapper-report-account" class="hidden">
+                        <label class="block text-xs font-semibold text-slate-500 mb-1">Select Account</label>
+                        <select id="report-account" class="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-sm focus:outline-blue-500"></select>
+                    </div>
+                    <div class="sm:col-span-3 flex gap-2 pt-2">
+                        <button type="button" onclick="generateReport()" class="flex-1 sm:flex-none bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-6 rounded-xl text-sm shadow-lg transition-all">Generate Report</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="report-output-container" class="bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-200 hidden">
+                <div class="text-center mb-6">
+                    <h1 class="text-2xl font-black text-slate-900" id="report-header-title">Monthly Report</h1>
+                    <p class="text-sm font-semibold text-slate-500 mt-1" id="report-header-subtitle">September 2026</p>
+                </div>
+                <div class="overflow-x-auto hide-scrollbar">
+                    <table class="min-w-full text-sm border border-slate-200" id="report-table">
+                        <thead class="bg-slate-100 text-slate-700 text-left" id="report-table-head"></thead>
+                        <tbody class="divide-y divide-slate-200" id="report-table-body"></tbody>
+                        <tfoot class="bg-slate-50 font-bold text-slate-800 border-t border-slate-300" id="report-table-foot"></tfoot>
+                    </table>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Script Logic -->
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyCVKauyr38cyghDgulZLPDyVvaMlnLfkSI",
+            authDomain: "vin-finance.firebaseapp.com",
+            projectId: "vin-finance",
+            storageBucket: "vin-finance.firebasestorage.app",
+            messagingSenderId: "398100782394",
+            appId: "1:398100782394:web:75083c001f0f7658008403",
+            measurementId: "G-F560PMW102"
+        };
+
+        let db = null;
+        let isCloudConnected = false;
+        let currentActiveMember = "Self";
+
+        try {
+            firebase.initializeApp(firebaseConfig);
+            db = firebase.firestore();
+            isCloudConnected = true;
+        } catch (e) {
+            console.warn("Firebase init error:", e);
+        }
+
+        const defaultData = {
+            familyMembers: ["Self"],
+            accounts: [
+                { id: "acc_1", owner: "Self", name: "HDFC Bank", type: "Bank", openingBalance: 50000, balance: 50000 },
+                { id: "acc_2", owner: "Self", name: "ICICI CC", type: "Credit Card", openingBalance: 5000, balance: 5000 },
+                { id: "acc_3", owner: "Self", name: "Car Loan", type: "Loan", openingBalance: 300000, balance: 300000 }
+            ],
+            expenses: [],
+            carLogs: []
+        };
+
+        let appData = JSON.parse(localStorage.getItem('app_data')) || defaultData;
+
+        function getTodayDateString() {
+            const today = new Date();
+            return today.toISOString().split('T')[0];
+        }
+
+        function fetchAllData() {
+            if (!isCloudConnected || !db) {
+                renderAll();
+                hideLoadingOverlay();
+                return;
+            }
+
+            db.collection("financeData").doc("mainStore").onSnapshot((doc) => {
+                if (doc.exists) {
+                    appData = doc.data();
+                    if (!appData.familyMembers) appData.familyMembers = ["Self"];
+                    if (!appData.accounts) appData.accounts = defaultData.accounts;
+                    if (!appData.expenses) appData.expenses = [];
+                    if (!appData.carLogs) appData.carLogs = [];
+                } else {
+                    appData = defaultData;
+                    // Seed initial document safely without triggering an automatic infinite write loop
+                    db.collection("financeData").doc("mainStore").set(defaultData).catch(err => console.error(err));
+                }
+                localStorage.setItem('app_data', JSON.stringify(appData));
+                renderAll();
+                hideLoadingOverlay();
+            }, (err) => {
+                console.error("Firestore sync error:", err);
+                hideLoadingOverlay();
+                renderAll();
+            });
+        }
+
+        function saveToCloud() {
+            localStorage.setItem('app_data', JSON.stringify(appData));
+            if (isCloudConnected && db) {
+                db.collection("financeData").doc("mainStore").set(appData)
+                    .then(() => renderAll())
+                    .catch((err) => console.error("Cloud save error:", err));
+            } else {
+                renderAll();
+            }
+        }
+
+        function hideLoadingOverlay() {
+            const overlay = document.getElementById('loading-overlay');
+            if (overlay) overlay.style.display = 'none';
+        }
+
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+            document.querySelectorAll('.tab-btn').forEach(el => {
+                el.classList.remove('bg-blue-600', 'text-white', 'font-bold');
+                el.classList.add('text-slate-600', 'font-semibold');
+            });
+            document.getElementById('tab-' + tabId).classList.remove('hidden');
+            const activeBtn = document.getElementById('btn-' + tabId);
+            if (activeBtn) {
+                activeBtn.classList.remove('text-slate-600', 'font-semibold');
+                activeBtn.classList.add('bg-blue-600', 'text-white', 'font-bold');
+            }
+            if (tabId === 'car' && !document.getElementById('edit-car-id').value) {
+                updateAutoOpeningReading();
+            }
+        }
+
+        function updateAutoOpeningReading() {
+            const opInput = document.getElementById('car-op');
+            const myCarLogs = (appData.carLogs || []).filter(c => c.owner === currentActiveMember);
+            if (myCarLogs.length > 0) {
+                opInput.value = myCarLogs[myCarLogs.length - 1].closing || 0;
+            } else {
+                opInput.value = 0;
+            }
+        }
+
+        function changeGlobalMember() {
+            const memberSelect = document.getElementById('global-member-select');
+            if (memberSelect) currentActiveMember = memberSelect.value;
+            renderAll();
+        }
+
+        function addNewFamilyMember() {
+            const name = prompt("Enter family member name:");
+            if (name && name.trim() !== '') {
+                if (!appData.familyMembers.includes(name.trim())) {
+                    appData.familyMembers.push(name.trim());
+                    saveToCloud();
+                } else {
+                    alert("Member already exists.");
+                }
+            }
+        }
+
+        function updateTransferToAccounts() {
+            const memberToEl = document.getElementById('exp-member-to');
+            const accSelectTo = document.getElementById('exp-account-to');
+            if (memberToEl && accSelectTo) {
+                const memberTo = memberToEl.value;
+                let html = '';
+                (appData.accounts || []).filter(a => a.owner === memberTo).forEach(acc => {
+                    html += `<option value="${acc.name}">${acc.name} (${acc.type})</option>`;
+                });
+                accSelectTo.innerHTML = html;
+            }
+        }
+
+        function toggleTransType() {
+            const type = document.getElementById('exp-type').value;
+            const catWrapper = document.getElementById('wrapper-category');
+            const accFromWrapper = document.getElementById('wrapper-account-from');
+            const labelFrom = document.getElementById('label-account-from');
+            const memberToWrapper = document.getElementById('wrapper-member-to');
+            const accToWrapper = document.getElementById('wrapper-account-to');
+
+            if (type === 'Transfer') {
+                catWrapper.classList.add('hidden');
+                labelFrom.innerText = "Transfer From Account";
+                accFromWrapper.classList.remove('hidden');
+                memberToWrapper.classList.remove('hidden');
+                accToWrapper.classList.remove('hidden');
+            } else {
+                catWrapper.classList.remove('hidden');
+                memberToWrapper.classList.add('hidden');
+                accToWrapper.classList.add('hidden');
+                labelFrom.innerText = type === 'Expense' ? "Paid From (Bank / CC)" : "Received In (Bank)";
+                
+                const catSelect = document.getElementById('exp-category');
+                catSelect.innerHTML = '';
+                const items = type === 'Expense' ? ['Fuel', 'Food', 'Utilities', 'Shopping', 'Other'] : ['Salary', 'Dividend', 'Other Income'];
+                items.forEach(i => catSelect.innerHTML += `<option value="${i}">${i}</option>`);
+            }
+        }
+
+        // Account Form
+        document.getElementById('account-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const id = document.getElementById('edit-acc-id').value;
+            const name = document.getElementById('acc-name').value.trim();
+            const type = document.getElementById('acc-type').value;
+            const balance = parseFloat(document.getElementById('acc-balance').value) || 0;
+
+            if (!id) {
+                appData.accounts.push({ id: 'acc_' + Date.now(), owner: currentActiveMember, name, type, openingBalance: balance, balance });
+            } else {
+                let acc = appData.accounts.find(a => a.id === id);
+                if (acc) { acc.name = name; acc.type = type; acc.openingBalance = balance; }
+                resetAccountForm();
+            }
+            this.reset();
+            saveToCloud();
+        });
+
+        function editAccount(id) {
+            const acc = appData.accounts.find(a => a.id === id);
+            if (!acc) return;
+            document.getElementById('acc-name').value = acc.name;
+            document.getElementById('acc-type').value = acc.type;
+            document.getElementById('acc-balance').value = acc.openingBalance;
+            document.getElementById('edit-acc-id').value = acc.id;
+            document.getElementById('save-acc-btn').innerText = "Update";
+            document.getElementById('cancel-edit-acc').classList.remove('hidden');
+            switchTab('accounts');
+        }
+
+        function resetAccountForm() {
+            document.getElementById('account-form').reset();
+            document.getElementById('edit-acc-id').value = "";
+            document.getElementById('save-acc-btn').innerText = "Add Account";
+            document.getElementById('cancel-edit-acc').classList.add('hidden');
+        }
+
+        function deleteAccount(id) {
+            if (confirm("Delete this account?")) {
+                appData.accounts = appData.accounts.filter(a => a.id !== id);
+                saveToCloud();
+            }
+        }
+
+        // Transaction Form
+        document.getElementById('expense-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const editId = document.getElementById('edit-exp-id').value;
+            const type = document.getElementById('exp-type').value;
+            const amount = parseFloat(document.getElementById('exp-amount').value) || 0;
+            const paidFrom = document.getElementById('exp-account').value;
+            const paidTo = document.getElementById('exp-account-to').value;
+            const toOwner = document.getElementById('exp-member-to')?.value || currentActiveMember;
+            const date = document.getElementById('exp-date').value;
+            const category = type === 'Transfer' ? 'Transfer' : document.getElementById('exp-category').value;
+            const remarks = document.getElementById('exp-remarks').value;
+
+            if (!editId) {
+                appData.expenses.push({ id: 'exp_' + Date.now(), owner: currentActiveMember, transType: type, date, category, amount, paidFrom, paidTo: type === 'Transfer' ? paidTo : null, toOwner: type === 'Transfer' ? toOwner : null, remarks });
+            } else {
+                let exp = appData.expenses.find(ex => ex.id === editId);
+                if (exp) {
+                    exp.transType = type; exp.date = date; exp.category = category; exp.amount = amount; exp.paidFrom = paidFrom; exp.paidTo = type === 'Transfer' ? paidTo : null; exp.toOwner = type === 'Transfer' ? toOwner : null; exp.remarks = remarks;
+                }
+                resetExpenseForm();
+            }
+            this.reset();
+            document.getElementById('exp-date').value = getTodayDateString();
+            toggleTransType();
+            saveToCloud();
+        });
+
+        function editExpense(id) {
+            const exp = appData.expenses.find(ex => ex.id === id);
+            if (!exp) return;
+            document.getElementById('edit-exp-id').value = exp.id;
+            document.getElementById('exp-type').value = exp.transType || 'Expense';
+            toggleTransType();
+            document.getElementById('exp-date').value = exp.date;
+            if (exp.transType !== 'Transfer') document.getElementById('exp-category').value = exp.category;
+            document.getElementById('exp-amount').value = exp.amount;
+            document.getElementById('exp-account').value = exp.paidFrom;
+            if (exp.transType === 'Transfer') {
+                document.getElementById('exp-member-to').value = exp.toOwner;
+                updateTransferToAccounts();
+                document.getElementById('exp-account-to').value = exp.paidTo;
+            }
+            document.getElementById('exp-remarks').value = exp.remarks || '';
+            document.getElementById('save-exp-btn').innerText = "Update";
+            document.getElementById('cancel-edit-exp').classList.remove('hidden');
+            switchTab('expenses');
+        }
+
+        function resetExpenseForm() {
+            document.getElementById('expense-form').reset();
+            document.getElementById('edit-exp-id').value = "";
+            document.getElementById('exp-type').value = 'Expense';
+            toggleTransType();
+            document.getElementById('save-exp-btn').innerText = "Add Transaction";
+            document.getElementById('cancel-edit-exp').classList.add('hidden');
+            document.getElementById('exp-date').value = getTodayDateString();
+        }
+
+        function deleteExpense(id) {
+            if (confirm("Delete this transaction?")) {
+                appData.expenses = appData.expenses.filter(ex => ex.id !== id);
+                saveToCloud();
+            }
+        }
+
+        // Car Form
+        function toggleCarRoute() {
+            const select = document.getElementById('car-route-select').value;
+            const customWrapper = document.getElementById('wrapper-car-route-custom');
+            if (select === 'OTHER') customWrapper.classList.remove('hidden');
+            else customWrapper.classList.add('hidden');
+        }
+
+        document.getElementById('car-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const editId = document.getElementById('edit-car-id').value;
+            const op = parseFloat(document.getElementById('car-op').value) || 0;
+            const cl = parseFloat(document.getElementById('car-cl').value) || 0;
+
+            if (cl <= op) {
+                alert("Closing reading must be greater than opening reading!");
+                return;
+            }
+
+            const kmRun = cl - op;
+            const type = document.getElementById('car-type').value;
+            const amount = type === 'Personal' ? 0 : kmRun * 11;
+            const date = document.getElementById('car-date').value;
+            const selRoute = document.getElementById('car-route-select').value;
+            const route = selRoute === 'OTHER' ? document.getElementById('car-route-custom').value.trim() : selRoute;
+            const remarks = document.getElementById('car-remarks').value;
+
+            if (!editId) {
+                appData.carLogs.push({ id: 'car_' + Date.now(), owner: currentActiveMember, date, route, opening: op, closing: cl, kmRun, type, amount, remarks });
+            } else {
+                let trip = appData.carLogs.find(c => c.id === editId);
+                if (trip) {
+                    trip.date = date; trip.route = route; trip.opening = op; trip.closing = cl; trip.kmRun = kmRun; trip.type = type; trip.amount = amount; trip.remarks = remarks;
+                }
+                resetCarForm();
+            }
+            this.reset();
+            document.getElementById('car-date').value = getTodayDateString();
+            saveToCloud();
+            if (!editId) updateAutoOpeningReading();
+        });
+
+        function editCarTrip(id) {
+            const trip = appData.carLogs.find(c => c.id === id);
+            if (!trip) return;
+            document.getElementById('edit-car-id').value = trip.id;
+            document.getElementById('car-date').value = trip.date;
+            document.getElementById('car-op').value = trip.opening;
+            document.getElementById('car-cl').value = trip.closing;
+            document.getElementById('car-type').value = trip.type;
+            document.getElementById('car-remarks').value = trip.remarks || '';
+            switchTab('car');
+        }
+
+        function resetCarForm() {
+            document.getElementById('car-form').reset();
+            document.getElementById('edit-car-id').value = "";
+            document.getElementById('car-date').value = getTodayDateString();
+            updateAutoOpeningReading();
+        }
+
+        function deleteCarTrip(id) {
+            if (confirm("Delete trip?")) {
+                appData.carLogs = appData.carLogs.filter(c => c.id !== id);
+                saveToCloud();
+            }
+        }
+
+        // Reports
+        function toggleReportType() {
+            const rType = document.getElementById('report-type').value;
+            const wrapperAcc = document.getElementById('wrapper-report-account');
+            if (rType === 'Bank / CC Statement') wrapperAcc.classList.remove('hidden');
+            else wrapperAcc.classList.add('hidden');
+        }
+
+        function generateReport() {
+            const monthInput = document.getElementById('report-month').value;
+            if (!monthInput) { alert("Select month!"); return; }
+            const rType = document.getElementById('report-type').value;
+            const rAcc = document.getElementById('report-account').value;
+
+            document.getElementById('report-header-title').innerText = rType;
+            const thead = document.getElementById('report-table-head');
+            const tbody = document.getElementById('report-table-body');
+            thead.innerHTML = `<tr><th class="p-3">Date</th><th class="p-3">Info</th><th class="p-3 text-right">Amount</th></tr>`;
+            tbody.innerHTML = `<tr><td colspan="3" class="p-4 text-center text-slate-500">Report generation active.</td></tr>`;
+            document.getElementById('report-output-container').classList.remove('hidden');
+        }
+
+        // Render function
+        function renderAll() {
+            if (!appData.familyMembers) appData.familyMembers = ['Self'];
+
+            const globalSelect = document.getElementById('global-member-select');
+            if (globalSelect) {
+                globalSelect.innerHTML = '';
+                appData.familyMembers.forEach(mem => {
+                    globalSelect.innerHTML += `<option value="${mem}" ${mem === currentActiveMember ? 'selected' : ''}>${mem}</option>`;
+                });
+            }
+
+            const myAccounts = (appData.accounts || []).filter(a => a.owner === currentActiveMember);
+            const myExpenses = (appData.expenses || []).filter(e => e.owner === currentActiveMember || e.toOwner === currentActiveMember);
+            const myCarLogs = (appData.carLogs || []).filter(c => c.owner === currentActiveMember);
+
+            let accSelect = document.getElementById('exp-account');
+            let memberToSelect = document.getElementById('exp-member-to');
+            let reportAccSelect = document.getElementById('report-account');
+
+            if (accSelect) accSelect.innerHTML = '';
+            if (memberToSelect) {
+                memberToSelect.innerHTML = '';
+                appData.familyMembers.forEach(mem => memberToSelect.innerHTML += `<option value="${mem}">${mem}</option>`);
+                memberToSelect.value = currentActiveMember;
+            }
+            updateTransferToAccounts();
+            if (reportAccSelect) reportAccSelect.innerHTML = '';
+
+            // Recalculate dynamic balances
+            appData.accounts.forEach(a => a.balance = a.openingBalance || 0);
+            (appData.expenses || []).forEach(ex => {
+                const change = (accName, owner, amt) => {
+                    let a = appData.accounts.find(x => x.name === accName && x.owner === owner);
+                    if (a) a.balance += amt;
+                };
+                if (ex.transType === 'Expense') change(ex.paidFrom, ex.owner, -ex.amount);
+                else if (ex.transType === 'Income') change(ex.paidFrom, ex.owner, ex.amount);
+                else if (ex.transType === 'Transfer') {
+                    change(ex.paidFrom, ex.owner, -ex.amount);
+                    change(ex.paidTo, ex.toOwner || ex.owner, ex.amount);
+                }
+            });
+
+            let totalBank = 0, totalCC = 0, totalLoans = 0, totalInvest = 0, totalExp = 0, totalInc = 0, totalClaim = 0;
+
+            let accTableHtml = '', dashAccHtml = '', accSelectHtml = '', reportAccHtml = '';
+            myAccounts.forEach(acc => {
+                accSelectHtml += `<option value="${acc.name}">${acc.name} (${acc.type})</option>`;
+                reportAccHtml += `<option value="${acc.name}">${acc.name}</option>`;
+                
+                let badge = acc.type, status = `₹ ${(acc.balance || 0).toFixed(2)}`;
+                if (acc.type === 'Bank') totalBank += acc.balance || 0;
+                else if (acc.type === 'Credit Card') totalCC += acc.balance || 0;
+                else if (acc.type === 'Loan') totalLoans += acc.balance || 0;
+                else totalInvest += acc.balance || 0;
+
+                accTableHtml += `<tr class="border-b"><td class="py-3">${acc.name}</td><td class="py-3">${badge}</td><td class="py-3">${status}</td><td class="py-3 text-center"><button onclick="editAccount('${acc.id}')" class="text-blue-600 mr-2">Edit</button><button onclick="deleteAccount('${acc.id}')" class="text-rose-500">Del</button></td></tr>`;
+                dashAccHtml += `<tr class="border-b"><td class="py-2.5">${acc.name}</td><td class="py-2.5">${badge}</td><td class="py-2.5 text-right">${status}</td></tr>`;
+            });
+
+            if (accSelect) accSelect.innerHTML = accSelectHtml;
+            if (reportAccSelect) reportAccSelect.innerHTML = reportAccHtml;
+            document.querySelector('#account-table tbody').innerHTML = accTableHtml;
+            document.querySelector('#dash-account-table tbody').innerHTML = dashAccHtml;
+
+            document.getElementById('dash-total-bank').innerText = `₹ ${totalBank.toFixed(2)}`;
+            document.getElementById('dash-total-cc').innerText = `₹ ${totalCC.toFixed(2)}`;
+            document.getElementById('dash-total-loans').innerText = `₹ ${totalLoans.toFixed(2)}`;
+            document.getElementById('dash-total-invest').innerText = `₹ ${totalInvest.toFixed(2)}`;
+            document.getElementById('dash-net-liquid').innerText = `₹ ${(totalBank - totalCC).toFixed(2)}`;
+
+            let expHtml = '';
+            myExpenses.forEach(ex => {
+                if (ex.transType === 'Expense' || !ex.transType) totalExp += ex.amount || 0;
+                if (ex.transType === 'Income') totalInc += ex.amount || 0;
+                expHtml += `<tr class="border-b"><td class="py-3">${ex.transType || 'Expense'}</td><td class="py-3">${ex.date}</td><td class="py-3">${ex.category || '-'}</td><td class="py-3">₹ ${ex.amount}</td><td class="py-3">${ex.paidFrom}</td><td class="py-3 text-center"><button onclick="editExpense('${ex.id}')" class="text-blue-600 mr-2">Edit</button><button onclick="deleteExpense('${ex.id}')" class="text-rose-500">Del</button></td></tr>`;
+            });
+            document.querySelector('#expense-table tbody').innerHTML = expHtml;
+            document.getElementById('dash-total-exp').innerText = `₹ ${totalExp.toFixed(2)}`;
+            document.getElementById('dash-total-inc').innerText = `₹ ${totalInc.toFixed(2)}`;
+
+            let carHtml = '';
+            myCarLogs.forEach(c => {
+                if (c.type === 'Official') totalClaim += c.amount || 0;
+                carHtml += `<tr class="border-b"><td class="py-3">${c.date}</td><td class="py-3">${c.route}</td><td class="py-3">${c.opening} → ${c.closing}</td><td class="py-3">${c.kmRun} KM</td><td class="py-3">${c.type}</td><td class="py-3">₹ ${c.amount}</td><td class="py-3 text-center"><button onclick="editCarTrip('${c.id}')" class="text-blue-600 mr-2">Edit</button><button onclick="deleteCarTrip('${c.id}')" class="text-rose-500">Del</button></td></tr>`;
+            });
+            document.querySelector('#car-table tbody').innerHTML = carHtml;
+            document.getElementById('dash-total-claim').innerText = `₹ ${totalClaim.toFixed(2)}`;
+        }
+
+        // Initialize App
+        document.getElementById('exp-date').value = getTodayDateString();
+        document.getElementById('car-date').value = getTodayDateString();
+        document.getElementById('report-month').value = getTodayDateString().substring(0, 7);
+        toggleTransType();
+        toggleReportType();
+        fetchAllData();
+    </script>
+</body>
+</html>
